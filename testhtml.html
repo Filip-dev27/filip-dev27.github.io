@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HTML Editor + Preview</title>
+  <style>
+    :root{--bg:#0f1724;--panel:#0b1220;--muted:#94a3b8;--accent:#38bdf8}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    body{background:linear-gradient(180deg,#071029 0%,#041022 100%);color:#e6eef8}
+    .app{height:100vh;display:flex;flex-direction:column}
+    header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    header h1{font-size:16px;margin:0;font-weight:600}
+    .tools{margin-left:auto;display:flex;gap:8px;align-items:center}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.primary{background:var(--accent);color:#022; border:none}
+    .main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+    .panel{background:var(--panel);border-radius:10px;padding:12px;display:flex;flex-direction:column;min-height:0}
+    .panel h2{margin:0 0 8px 0;font-size:13px;color:var(--muted)}
+    textarea{flex:1;width:100%;resize:none;background:#071223;border:1px solid rgba(255,255,255,0.03);color:#dff3ff;padding:12px;border-radius:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.5;outline:none}
+    .controls{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    label.toggle{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+    iframe{flex:1;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:white}
+    .small{font-size:12px;color:var(--muted)}
+    .footer{padding:10px 14px;font-size:13px;color:var(--muted);border-top:1px solid rgba(255,255,255,0.02)}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=checkbox]{width:18px;height:18px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>HTML Editor + Live Preview</h1>
+      <div class="tools">
+        <div class="small">Auto-update:</div>
+        <button id="toggleAuto" title="Toggle auto preview">Enable</button>
+        <button id="runBtn" class="primary">Run</button>
+        <button id="clearBtn">Clear</button>
+        <button id="downloadBtn">Download .html</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="panel">
+        <div class="controls">
+          <h2>Edit HTML</h2>
+          <div style="margin-left:auto" class="small">Local save: <span id="status">none</span></div>
+        </div>
+        <textarea id="editor" spellcheck="false" placeholder="Type your HTML code here...">
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Example</title>
+    <style>body{font-family:Arial;padding:20px}</style>
+  </head>
+  <body>
+    <h1>Hello — the preview works!</h1>
+    <p>Add your HTML here.</p>
+    <script>console.log('Script from preview works');</script>
+  </body>
+</html>
+        </textarea>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <h2>Preview</h2>
+          <div class="small">(sandboxed iframe)</div>
+          <div style="margin-left:auto" class="row small">Debug console: <input id="showConsole" type="checkbox" title="Forward console logs from preview (not supported everywhere)"></div>
+        </div>
+        <iframe id="preview" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+      </div>
+    </div>
+
+    <div class="footer">Tip: Use <strong>Run</strong> to refresh preview manually. Auto-update also saves edits to <em>localStorage</em>.</div>
+  </div>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const runBtn = document.getElementById('runBtn');
+    const toggleAuto = document.getElementById('toggleAuto');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const status = document.getElementById('status');
+    const showConsole = document.getElementById('showConsole');
+
+    const STORAGE_KEY = 'html_editor_content_v1';
+
+    if(localStorage.getItem(STORAGE_KEY)){
+      editor.value = localStorage.getItem(STORAGE_KEY);
+      status.textContent = 'restored';
+    } else {
+      status.textContent = 'empty';
+    }
+
+    function updatePreview(content){
+      preview.srcdoc = content;
+    }
+
+    let saveTimer = null;
+    function scheduleSave(){
+      status.textContent = 'saving...';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(()=>{
+        localStorage.setItem(STORAGE_KEY, editor.value);
+        status.textContent = 'saved';
+        setTimeout(()=>status.textContent='',1200);
+      },600);
+    }
+
+    let auto = true;
+    let debounceTimer = null;
+    function onEditorInput(){
+      if(auto){
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(()=>{
+          updatePreview(editor.value);
+        },400);
+        scheduleSave();
+      } else {
+        scheduleSave();
+      }
+    }
+
+    updatePreview(editor.value);
+
+    editor.addEventListener('input', onEditorInput);
+
+    runBtn.addEventListener('click', ()=>{
+      updatePreview(editor.value);
+      status.textContent = 'preview refreshed';
+      setTimeout(()=>status.textContent='',1200);
+    });
+
+    toggleAuto.addEventListener('click', ()=>{
+      auto = !auto;
+      toggleAuto.textContent = auto ? 'Enable' : 'Disable';
+      toggleAuto.classList.toggle('primary', auto);
+      if(auto) updatePreview(editor.value);
+    });
+
+    clearBtn.addEventListener('click', ()=>{
+      if(confirm('Clear the editor (cannot be undone)?')){
+        editor.value = '';
+        updatePreview('');
+        localStorage.removeItem(STORAGE_KEY);
+        status.textContent = 'cleared';
+        setTimeout(()=>status.textContent='',1200);
+      }
+    });
+
+    downloadBtn.addEventListener('click', ()=>{
+      const blob = new Blob([editor.value], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'page.html';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    showConsole.addEventListener('change', ()=>{
+      if(showConsole.checked){
+        const forwarder = `\n<script> (function(){const o=console;['log','warn','error','info'].forEach(fn=>{const orig=o[fn]; o[fn]=function(){window.parent.postMessage({type:'console',level:fn,args:Array.from(arguments)},'*'); orig.apply(console,arguments)} })})();<\/script>\n`;
+        updatePreview(editor.value + '\n' + forwarder);
+      } else {
+        updatePreview(editor.value);
+      }
+    });
+
+    window.addEventListener('message', (ev)=>{
+      if(ev.data && ev.data.type === 'console'){
+        try{
+          const {level,args} = ev.data;
+          console[level]('Preview:', ...args);
+        }catch(e){}
+      }
+    });
+
+    window.addEventListener('keydown', (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key === 'Enter'){
+        e.preventDefault(); updatePreview(editor.value);
+      }
+    });
+  </script>
+</body>
+</html>
