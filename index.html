@@ -1,1 +1,172 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Pixel City Card Game Prototype</title>
+<style>
+  body { margin:0; overflow:hidden; background:#222; }
+  canvas { display:block; margin:0 auto; background:#444; }
 
+  #hand {
+    position:absolute;
+    bottom:0;
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:10px;
+    padding:10px;
+  }
+  .card {
+    width:80px; height:120px;
+    background:#eee; border:2px solid #999;
+    border-radius:8px;
+    cursor:pointer;
+    user-select:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:bold;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hand"></div>
+
+<script>
+// ================== KONFIGURACJA ==================
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const HEX_SIZE = 50;
+const MAP_RADIUS = 3;
+let hexMap = [];
+let hoveredHex = null;
+let cards = [];
+
+// ================== FUNKCJE POMOCNICZE ==================
+function axialToWorld(q,r){
+    let x = HEX_SIZE * 3/2 * q;
+    let y = HEX_SIZE * Math.sqrt(3) * (r + q/2);
+    return {x: x + canvas.width/2, y: y + canvas.height/2};
+}
+
+function drawHex(x,y,size,color){
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+        let angle = Math.PI/180 * (60*i - 30);
+        let px = x + size * Math.cos(angle);
+        let py = y + size * Math.sin(angle);
+        if(i===0) ctx.moveTo(px,py);
+        else ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
+}
+
+// ================== GENEROWANIE MAPY ==================
+function generateMap(){
+    hexMap = [];
+    for(let q=-MAP_RADIUS;q<=MAP_RADIUS;q++){
+        let r1 = Math.max(-MAP_RADIUS, -q-MAP_RADIUS);
+        let r2 = Math.min(MAP_RADIUS, -q+MAP_RADIUS);
+        for(let r=r1;r<=r2;r++){
+            let pos = axialToWorld(q,r);
+            hexMap.push({q,r,x:pos.x,y:pos.y,building:null});
+        }
+    }
+}
+
+// ================== RYSOWANIE MAPY ==================
+function drawMap(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for(let hex of hexMap){
+        let color = (hoveredHex && hoveredHex.q===hex.q && hoveredHex.r===hex.r) ? "#ffa" : "#ccc";
+        drawHex(hex.x,hex.y,HEX_SIZE,color);
+        if(hex.building) {
+            ctx.fillStyle = "red";
+            ctx.fillRect(hex.x-10, hex.y-10, 20,20);
+        }
+    }
+}
+
+// ================== DETEKCJA HEXTU POD MYSZĄ ==================
+function pixelToAxial(px,py){
+    let x = px - canvas.width/2;
+    let y = py - canvas.height/2;
+    let q = (2/3*x)/HEX_SIZE;
+    let r = (-1/3*x + Math.sqrt(3)/3*y)/HEX_SIZE;
+    // rounding to nearest hex
+    let rx = Math.round(q);
+    let rz = Math.round(r);
+    return {q:rx,r:rz};
+}
+
+function getHex(q,r){
+    return hexMap.find(h => h.q===q && h.r===r);
+}
+
+// ================== KARTY ==================
+const handDiv = document.getElementById("hand");
+
+function createCard(name,type){
+    let div = document.createElement("div");
+    div.className="card";
+    div.innerText = name;
+    div.dataset.type=type;
+    handDiv.appendChild(div);
+
+    // drag & drop
+    div.onmousedown = function(e){
+        e.preventDefault();
+        let offsetX = e.clientX - div.getBoundingClientRect().x;
+        let offsetY = e.clientY - div.getBoundingClientRect().y;
+        function moveHandler(ev){
+            div.style.position="absolute";
+            div.style.left=(ev.clientX - offsetX)+"px";
+            div.style.top=(ev.clientY - offsetY)+"px";
+        }
+        function upHandler(ev){
+            document.removeEventListener("mousemove",moveHandler);
+            document.removeEventListener("mouseup",upHandler);
+            // sprawdz czy karta wpadla na hex
+            let pos = pixelToAxial(ev.clientX, ev.clientY);
+            let hex = getHex(pos.q,pos.r);
+            if(hex){
+                if(div.dataset.type==="building"){
+                    hex.building=true;
+                }
+            }
+            // wróć kartę do ręki
+            div.style.position="static";
+        }
+        document.addEventListener("mousemove",moveHandler);
+        document.addEventListener("mouseup",upHandler);
+    }
+    cards.push(div);
+}
+
+// ================== INICJALIZACJA ==================
+generateMap();
+createCard("House","building");
+createCard("Farm","building");
+
+// ================== ANIMACJA ==================
+canvas.onmousemove = function(e){
+    let pos = pixelToAxial(e.clientX,e.clientY);
+    hoveredHex = getHex(pos.q,pos.r);
+}
+function gameLoop(){
+    drawMap();
+    requestAnimationFrame(gameLoop);
+}
+gameLoop();
+
+</script>
+</body>
+</html>
