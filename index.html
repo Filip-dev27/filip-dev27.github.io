@@ -2,20 +2,20 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>Pixel City Card Game</title>
+<title>Pixel City Max Prototype</title>
 <style>
-  body { margin:0; overflow:hidden; background:#222; font-family:sans-serif; }
-  canvas { display:block; background:#444; }
-  #hand {
+body { margin:0; overflow:hidden; background:#222; font-family:sans-serif; }
+canvas { display:block; background:#444; }
+#hand {
     position:absolute;
     bottom:0;
     left:50%;
     transform:translateX(-50%);
     width:100%;
-    height:150px;
+    height:200px;
     pointer-events:none;
-  }
-  .card {
+}
+.card {
     width:80px;
     height:120px;
     background:#eee;
@@ -30,7 +30,7 @@
     font-weight:bold;
     pointer-events:auto;
     transition: transform 0.2s;
-  }
+}
 </style>
 </head>
 <body>
@@ -50,6 +50,17 @@ let hoveredHex = null;
 let cards = [];
 
 const handDiv = document.getElementById("hand");
+
+// ================== PIXEL-ART ASSETS (placeholder) ==================
+const images = {};
+images.house = new Image();
+images.house.src = "https://i.imgur.com/8l1AxHz.png";
+images.farm = new Image();
+images.farm.src = "https://i.imgur.com/0a1bE8v.png";
+images.people = new Image();
+images.people.src = "https://i.imgur.com/O3kzQEZ.png"; // np. postać
+images.special = new Image();
+images.special.src = "https://i.imgur.com/Mx3hFSp.png"; // efekt specjalny
 
 // ================== HEX MAP ==================
 function axialToWorld(q,r){
@@ -81,21 +92,44 @@ function generateMap(){
         let r2 = Math.min(MAP_RADIUS, -q+MAP_RADIUS);
         for(let r=r1;r<=r2;r++){
             let pos = axialToWorld(q,r);
-            hexMap.push({q,r,x:pos.x,y:pos.y,building:null,discovered:true});
+            hexMap.push({
+                q,r,
+                x:pos.x,
+                y:pos.y,
+                building:null,
+                population:0,
+                discovered:true,
+                animProgress:0
+            });
         }
     }
 }
 
-function drawMap(){
+function drawMap(delta){
     ctx.clearRect(0,0,canvas.width,canvas.height);
     for(let hex of hexMap){
         let color = hex.discovered ? "#ccc" : "#666";
         if(hoveredHex && hoveredHex.q===hex.q && hoveredHex.r===hex.r) color="#ffa";
         drawHex(hex.x,hex.y,HEX_SIZE,color);
+
+        // budynek z animacją
         if(hex.building){
-            // budynek pixel art placeholder
-            ctx.fillStyle="red";
-            ctx.fillRect(hex.x-10, hex.y-10, 20,20);
+            if(hex.animProgress<1) hex.animProgress += delta*0.01;
+            let scale = Math.min(hex.animProgress,1);
+            let img = images[hex.building];
+            ctx.save();
+            ctx.translate(hex.x,hex.y);
+            ctx.scale(scale,scale);
+            ctx.drawImage(img,-img.width/2,-img.height/2);
+            ctx.restore();
+        }
+
+        // populacja
+        if(hex.population>0){
+            ctx.fillStyle="blue";
+            ctx.font="16px sans-serif";
+            ctx.textAlign="center";
+            ctx.fillText(hex.population,hex.x,hex.y+HEX_SIZE/2);
         }
     }
 }
@@ -115,19 +149,22 @@ function getHex(q,r){
 }
 
 // ================== CARDS ==================
-function createCard(name,type){
+function createCard(name,type,imgKey){
     let div = document.createElement("div");
     div.className="card";
     div.innerText=name;
     div.dataset.type=type;
+    div.dataset.img=imgKey;
     handDiv.appendChild(div);
     cards.push(div);
 
     div.onmousedown = function(e){
         e.preventDefault();
+        div.style.zIndex=1000;
         let offsetX = e.clientX - div.getBoundingClientRect().x;
         let offsetY = e.clientY - div.getBoundingClientRect().y;
 
+        div.style.transform+=" scale(1.2)";
         function moveHandler(ev){
             div.style.left=(ev.clientX-offsetX)+"px";
             div.style.top=(ev.clientY-offsetY)+"px";
@@ -135,12 +172,23 @@ function createCard(name,type){
         function upHandler(ev){
             document.removeEventListener("mousemove",moveHandler);
             document.removeEventListener("mouseup",upHandler);
+            div.style.transform=div.style.transform.replace(" scale(1.2)","");
             let pos = pixelToAxial(ev.clientX, ev.clientY);
             let hex = getHex(pos.q,pos.r);
             if(hex){
-                if(div.dataset.type==="building") hex.building=true;
+                switch(div.dataset.type){
+                    case "building": hex.building=div.dataset.img; hex.animProgress=0; break;
+                    case "people": hex.population+=1; break;
+                    case "special": hex.building=null; break;
+                    case "discover":
+                        getNeighbors(hex).forEach(n=>{
+                            let h = getHex(n.q,n.r);
+                            if(h) h.discovered=true;
+                        });
+                        break;
+                }
             }
-            arrangeCards(); // wraca karta do wachlarza
+            arrangeCards();
         }
         document.addEventListener("mousemove",moveHandler);
         document.addEventListener("mouseup",upHandler);
@@ -157,29 +205,44 @@ function arrangeCards(){
     let mid = (n-1)/2;
     cards.forEach((card,i)=>{
         let t = i-mid;
-        let angle = (t/mid)*(maxAngle/2)*Math.PI/180; // convert to rad
+        let angle = (t/mid)*(maxAngle/2)*Math.PI/180; 
         let px = radius * Math.sin(angle);
         let py = -radius*(1-Math.cos(angle))*0.5;
-        card.style.left = (centerX+px-40)+"px"; // 40 = half card width
-        card.style.top = (baseY+py-60)+"px"; // 60 = half card height
+        card.style.left = (centerX+px-40)+"px";
+        card.style.top = (baseY+py-60)+"px";
         card.style.transform = `rotate(${angle}rad)`;
     });
 }
 
+// ================== NEIGHBORS ==================
+function getNeighbors(hex){
+    const dirs = [
+        {q:1,r:0},{q:1,r:-1},{q:0,r:-1},
+        {q:-1,r:0},{q:-1,r:1},{q:0,r:1}
+    ];
+    return dirs.map(d=>({q:hex.q+d.q,r:hex.r+d.r}));
+}
+
 // ================== INIT ==================
 generateMap();
-createCard("House","building");
-createCard("Farm","building");
+createCard("House","building","house");
+createCard("Farm","building","farm");
+createCard("Person","people","people");
+createCard("Destroy","special","special");
+createCard("Discover","discover","special");
 arrangeCards();
 
 // ================== ANIM LOOP ==================
+let lastTime = performance.now();
 canvas.onmousemove = function(e){
     let pos = pixelToAxial(e.clientX,e.clientY);
     hoveredHex = getHex(pos.q,pos.r);
 }
 
-function gameLoop(){
-    drawMap();
+function gameLoop(time){
+    let delta = time - lastTime;
+    lastTime = time;
+    drawMap(delta);
     requestAnimationFrame(gameLoop);
 }
 gameLoop();
